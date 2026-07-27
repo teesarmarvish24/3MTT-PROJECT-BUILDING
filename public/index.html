@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TaskFlow — 3MTT Task Manager</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Auth screen -->
+  <section id="auth-screen" class="auth-screen hidden">
+    <div class="auth-card">
+      <h1 class="logo">Task<span>Flow</span></h1>
+      <p class="tagline">Organize your work. Get things done.</p>
+
+      <div class="auth-tabs">
+        <button id="tab-login" class="tab active" type="button">Log in</button>
+        <button id="tab-register" class="tab" type="button">Sign up</button>
+      </div>
+
+      <form id="login-form" class="auth-form">
+        <label>Email
+          <input type="email" name="email" required autocomplete="email" />
+        </label>
+        <label>Password
+          <input type="password" name="password" required autocomplete="current-password" />
+        </label>
+        <button type="submit" class="btn btn-primary">Log in</button>
+      </form>
+
+      <form id="register-form" class="auth-form hidden">
+        <label>Full name
+          <input type="text" name="name" required autocomplete="name" />
+        </label>
+        <label>Email
+          <input type="email" name="email" required autocomplete="email" />
+        </label>
+        <label>Password (min. 6 characters)
+          <input type="password" name="password" required minlength="6" autocomplete="new-password" />
+        </label>
+        <button type="submit" class="btn btn-primary">Create account</button>
+      </form>
+
+      <p id="auth-error" class="error-msg hidden"></p>
+    </div>
+  </section>
+
+  <!-- Main app -->
+  <section id="app-screen" class="app-screen hidden">
+    <header class="topbar">
+      <h1 class="logo small">Task<span>Flow</span></h1>
+      <div class="topbar-right">
+        <span id="user-greeting"></span>
+        <button id="logout-btn" class="btn btn-ghost" type="button">Log out</button>
+      </div>
+    </header>
+
+    <main class="container">
+      <div class="stats" id="stats"></div>
+
+      <div class="toolbar">
+        <input type="search" id="search-input" placeholder="Search tasks…" />
+        <select id="filter-status">
+          <option value="">All statuses</option>
+          <option value="pending">Pending</option>
+          <option value="in-progress">In progress</option>
+          <option value="completed">Completed</option>
+        </select>
+        <select id="filter-priority">
+          <option value="">All priorities</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
+        <button id="new-task-btn" class="btn btn-primary" type="button">+ New task</button>
+      </div>
+
+      <ul id="task-list" class="task-list"></ul>
+      <p id="empty-state" class="empty-state hidden">No tasks yet. Click <strong>+ New task</strong> to add your first one.</p>
+    </main>
+  </section>
+
+  <!-- Task modal -->
+  <div id="task-modal" class="modal-backdrop hidden">
+    <div class="modal">
+      <h2 id="modal-title">New task</h2>
+      <form id="task-form">
+        <input type="hidden" name="id" />
+        <label>Title
+          <input type="text" name="title" required maxlength="120" />
+        </label>
+        <label>Description
+          <textarea name="description" rows="3" maxlength="500"></textarea>
+        </label>
+        <div class="form-row">
+          <label>Priority
+            <select name="priority">
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+            </select>
+          </label>
+          <label>Status
+            <select name="status">
+              <option value="pending" selected>Pending</option>
+              <option value="in-progress">In progress</option>
+              <option value="completed">Completed</option>
+            </select>
+          </label>
+          <label>Due date
+            <input type="date" name="due_date" />
+          </label>
+        </div>
+        <p id="modal-error" class="error-msg hidden"></p>
+        <div class="modal-actions">
+          <button type="button" id="modal-cancel" class="btn btn-ghost">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save task</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
