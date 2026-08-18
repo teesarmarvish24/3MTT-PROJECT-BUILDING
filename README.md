@@ -20,7 +20,7 @@ TaskFlow lets users create an account, then create, organize, filter, and track 
 | Layer     | Technology                          |
 |-----------|-------------------------------------|
 | Backend   | Node.js, Express 5                  |
-| Database  | SQLite (better-sqlite3)             |
+| Database  | SQLite (Node's built-in `node:sqlite`) |
 | Auth      | bcryptjs (hashing), jsonwebtoken    |
 | Frontend  | HTML, CSS, vanilla JavaScript (SPA) |
 
@@ -28,7 +28,7 @@ TaskFlow lets users create an account, then create, organize, filter, and track 
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) v18 or newer
+- [Node.js](https://nodejs.org/) v22.5 or newer (uses the built-in `node:sqlite` module — no compiler or build tools needed)
 
 ### Installation
 
