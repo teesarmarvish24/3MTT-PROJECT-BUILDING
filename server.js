@@ -4,6 +4,8 @@ const path = require('path');
 const authRoutes = require('./routes/auth');
 const pickupRoutes = require('./routes/pickups');
 const userRoutes = require('./routes/users');
+const locationRoutes = require('./routes/locations');
+const analyticsRoutes = require('./routes/analytics');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,6 +16,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/api/auth', authRoutes);
 app.use('/api/pickups', pickupRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/locations', locationRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', app: 'Waste Pickup Scheduler', time: new Date().toISOString() });

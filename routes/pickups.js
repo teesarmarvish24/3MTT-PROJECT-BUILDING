@@ -64,9 +64,9 @@ function findOwnedPickup(id, userId) {
   return db.prepare('SELECT * FROM pickups WHERE id = ? AND user_id = ?').get(id, userId);
 }
 
-// List pickups: /api/pickups?status=&waste_type=&due_soon=1
+// List pickups: /api/pickups?status=&waste_type=&due_soon=1&search=
 router.get('/', (req, res) => {
-  const { status, waste_type: wasteType, due_soon: dueSoon } = req.query;
+  const { status, waste_type: wasteType, due_soon: dueSoon, search } = req.query;
 
   let sql = 'SELECT * FROM pickups WHERE user_id = ?';
   const params = [req.user.id];
@@ -81,6 +81,10 @@ router.get('/', (req, res) => {
   }
   if (dueSoon) {
     sql += " AND status = 'scheduled' AND scheduled_date <= date('now', '+2 days')";
+  }
+  if (search) {
+    sql += ' AND (address LIKE ? OR notes LIKE ?)';
+    params.push(`%${search}%`, `%${search}%`);
   }
 
   sql += ` ORDER BY

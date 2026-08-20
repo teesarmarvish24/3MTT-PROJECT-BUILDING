@@ -44,9 +44,18 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  CREATE TABLE IF NOT EXISTS locations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    address TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE INDEX IF NOT EXISTS idx_pickups_user ON pickups(user_id);
   CREATE INDEX IF NOT EXISTS idx_pickups_date ON pickups(scheduled_date);
   CREATE INDEX IF NOT EXISTS idx_feedback_pickup ON feedback(pickup_id);
+  CREATE INDEX IF NOT EXISTS idx_locations_user ON locations(user_id);
 `);
 
 module.exports = db;

@@ -4,20 +4,24 @@ A full-stack web app for scheduling waste pickups, built for the **3MTT (3 Milli
 
 **Problem:** Waste pickups are unreliable — residents don't have a simple way to book them, get reminded, or report whether collection actually happened.
 
-**Solution:** EcoPickup lets residents schedule one-off or recurring pickups, see reminders for anything due soon, self-report whether a pickup was collected or missed, and leave feedback on the service.
+**Solution:** EcoPickup lets residents schedule one-off or recurring pickups, see reminders for anything due soon, self-report whether a pickup was collected or missed, leave feedback on the service, and track it all from a dashboard, calendar, and analytics view.
 
 ## Features
 
 - **User accounts** — register (with a default pickup address) and log in with secure password hashing (bcrypt) and JWT-based sessions
+- **Dashboard** — a personalized overview with live stats, upcoming pickups, and recent feedback
 - **Scheduling** — book a pickup with waste type (general / recyclable / organic / hazardous), address, date, time window, and optional notes
+- **Saved locations** — save addresses (e.g. Home, Office) to a personal address book and one-click fill them when scheduling
+- **Calendar view** — a full month calendar with a colored dot per pickup; click any day to see or schedule pickups for that date
 - **Recurring pickups** — set a pickup to repeat weekly, every 2 weeks, or monthly; the next occurrence is automatically scheduled as soon as the current one is marked collected or missed
 - **Reminders** — a banner and notification bell surface any scheduled pickup due within the next 2 days
 - **Status tracking** — mark a pickup as collected, missed, or cancel it; overdue-but-unconfirmed pickups are flagged as "Awaiting confirmation"
 - **Feedback** — rate a collected/missed pickup 1–5 stars with an optional comment
-- **Filters** — filter your pickups by status or waste type
-- **Dashboard stats** — live counts of total, scheduled, collected, and missed pickups
+- **Analytics** — status and waste-type breakdown charts, a 14-day collection trend, completion rate, and a rating-distribution chart, all rendered with dependency-free custom SVG charts
+- **Search & filters** — filter your pickups by status, waste type, or a text search across address/notes
+- **Settings page** — edit your profile and change your password
 - **Dark mode** — toggle with a saved preference
-- **Responsive UI** — works on desktop and mobile
+- **Responsive UI** — collapsible sidebar navigation with a mobile hamburger menu
 
 ## Tech Stack
 
@@ -26,7 +30,7 @@ A full-stack web app for scheduling waste pickups, built for the **3MTT (3 Milli
 | Backend   | Node.js, Express 5                      |
 | Database  | SQLite (Node's built-in `node:sqlite`)  |
 | Auth      | bcryptjs (hashing), jsonwebtoken        |
-| Frontend  | HTML, CSS, vanilla JavaScript (SPA)     |
+| Frontend  | HTML, CSS, vanilla JavaScript (SPA), custom dependency-free SVG charts |
 
 ## Getting Started
 
@@ -75,7 +79,7 @@ All endpoints below (except `/api/auth/*` and `/api/health`) require an `Authori
 
 | Method | Endpoint          | Description                                                  |
 |--------|-------------------|----------------------------------------------------------------|
-| GET    | `/api/pickups`     | List your pickups (`?status=`, `?waste_type=`, `?due_soon=1`) |
+| GET    | `/api/pickups`     | List your pickups (`?status=`, `?waste_type=`, `?due_soon=1`, `?search=`) |
 | GET    | `/api/pickups/:id` | Full pickup detail, including feedback                       |
 | POST   | `/api/pickups`     | Schedule a pickup `{ waste_type, address, scheduled_date, time_window, recurrence, notes }` |
 | PUT    | `/api/pickups/:id` | Update / reschedule / change status (auto-creates the next occurrence when a recurring pickup is resolved) |
@@ -88,10 +92,18 @@ All endpoints below (except `/api/auth/*` and `/api/health`) require an `Authori
 | POST   | `/api/pickups/:id/feedback`  | Leave feedback `{ rating (1-5), comment }` — only once a pickup is collected or missed |
 | GET    | `/api/pickups/:id/feedback`  | View feedback for a pickup                       |
 
-### Profile
+### Locations
+
+| Method | Endpoint             | Description                                  |
+|--------|-----------------------|-----------------------------------------------|
+| GET/POST | `/api/locations`    | List / save a location `{ label, address }` |
+| DELETE | `/api/locations/:id`  | Delete a saved location                       |
+
+### Analytics & profile
 
 | Method | Endpoint                  | Description                                         |
 |--------|----------------------------|-------------------------------------------------------|
+| GET    | `/api/analytics`          | Status/waste-type breakdown, completion rate, average rating, 14-day trend |
 | GET/PUT | `/api/users/me`           | View / update your profile `{ name, address }`       |
 | PUT    | `/api/users/me/password`   | Change password `{ current_password, new_password }` |
 
@@ -111,11 +123,14 @@ All endpoints below (except `/api/auth/*` and `/api/health`) require an `Authori
 ├── routes/
 │   ├── auth.js            # Register / login endpoints
 │   ├── pickups.js         # Pickup scheduling, status, feedback endpoints
+│   ├── locations.js       # Saved address book endpoints
+│   ├── analytics.js       # Analytics dashboard endpoint
 │   └── users.js           # Profile & password endpoints
 └── public/
-    ├── index.html          # Single-page frontend
+    ├── index.html          # Single-page frontend (sidebar + dashboard/pickups/calendar/analytics/settings views)
     ├── style.css           # Styles (incl. dark mode)
     └── js/
+        ├── charts.js       # Dependency-free SVG chart helpers
         └── app.js          # Frontend logic
 ```
 
