@@ -7,7 +7,7 @@ if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
-const db = new DatabaseSync(path.join(dataDir, 'taskflow.db'));
+const db = new DatabaseSync(path.join(dataDir, 'waste-pickup.db'));
 db.exec('PRAGMA journal_mode = WAL');
 db.exec('PRAGMA foreign_keys = ON');
 
@@ -17,67 +17,36 @@ db.exec(`
     name TEXT NOT NULL,
     email TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
+    address TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
-  CREATE TABLE IF NOT EXISTS projects (
+  CREATE TABLE IF NOT EXISTS pickups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    color TEXT NOT NULL DEFAULT '#2f6f4f',
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
-    title TEXT NOT NULL,
-    description TEXT NOT NULL DEFAULT '',
-    priority TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high')),
-    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in-progress', 'completed')),
-    due_date TEXT,
+    waste_type TEXT NOT NULL CHECK (waste_type IN ('general', 'recyclable', 'organic', 'hazardous')),
+    address TEXT NOT NULL,
+    time_window TEXT NOT NULL DEFAULT 'morning' CHECK (time_window IN ('morning', 'afternoon', 'evening')),
+    scheduled_date TEXT NOT NULL,
+    recurrence TEXT NOT NULL DEFAULT 'none' CHECK (recurrence IN ('none', 'weekly', 'biweekly', 'monthly')),
+    status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'collected', 'missed', 'cancelled')),
+    notes TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
-  CREATE TABLE IF NOT EXISTS subtasks (
+  CREATE TABLE IF NOT EXISTS feedback (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-    title TEXT NOT NULL,
-    completed INTEGER NOT NULL DEFAULT 0,
-    position INTEGER NOT NULL DEFAULT 0
-  );
-
-  CREATE TABLE IF NOT EXISTS tags (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pickup_id INTEGER NOT NULL UNIQUE REFERENCES pickups(id) ON DELETE CASCADE,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    color TEXT NOT NULL DEFAULT '#6b7671',
-    UNIQUE(user_id, name)
-  );
-
-  CREATE TABLE IF NOT EXISTS task_tags (
-    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-    tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-    PRIMARY KEY (task_id, tag_id)
-  );
-
-  CREATE TABLE IF NOT EXISTS comments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    body TEXT NOT NULL,
+    rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    comment TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
-  CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id);
-  CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
-  CREATE INDEX IF NOT EXISTS idx_subtasks_task ON subtasks(task_id);
-  CREATE INDEX IF NOT EXISTS idx_comments_task ON comments(task_id);
-  CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id);
-  CREATE INDEX IF NOT EXISTS idx_tags_user ON tags(user_id);
-  CREATE INDEX IF NOT EXISTS idx_task_tags_tag ON task_tags(tag_id);
+  CREATE INDEX IF NOT EXISTS idx_pickups_user ON pickups(user_id);
+  CREATE INDEX IF NOT EXISTS idx_pickups_date ON pickups(scheduled_date);
+  CREATE INDEX IF NOT EXISTS idx_feedback_pickup ON feedback(pickup_id);
 `);
 
 module.exports = db;

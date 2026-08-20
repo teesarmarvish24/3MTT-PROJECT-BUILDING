@@ -2,11 +2,8 @@ const express = require('express');
 const path = require('path');
 
 const authRoutes = require('./routes/auth');
-const taskRoutes = require('./routes/tasks');
-const projectRoutes = require('./routes/projects');
-const tagRoutes = require('./routes/tags');
+const pickupRoutes = require('./routes/pickups');
 const userRoutes = require('./routes/users');
-const analyticsRoutes = require('./routes/analytics');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,14 +12,11 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.use('/api/auth', authRoutes);
-app.use('/api/tasks', taskRoutes);
-app.use('/api/projects', projectRoutes);
-app.use('/api/tags', tagRoutes);
+app.use('/api/pickups', pickupRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api/analytics', analyticsRoutes);
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', app: 'TaskFlow', time: new Date().toISOString() });
+  res.json({ status: 'ok', app: 'Waste Pickup Scheduler', time: new Date().toISOString() });
 });
 
 // Serve the SPA for any non-API route
@@ -36,5 +30,5 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`TaskFlow running at http://localhost:${PORT}`);
+  console.log(`Waste Pickup Scheduler running at http://localhost:${PORT}`);
 });

@@ -1,17 +1,14 @@
 // ---------- State ----------
 const state = {
-  token: localStorage.getItem('tf_token'),
-  user: JSON.parse(localStorage.getItem('tf_user') || 'null'),
-  tasks: [],
-  projects: [],
-  tags: [],
-  view: 'list', // 'list' | 'kanban' | 'analytics'
-  projectId: null,
-  tagId: null,
-  theme: localStorage.getItem('tf_theme') || 'light',
+  token: localStorage.getItem('wp_token'),
+  user: JSON.parse(localStorage.getItem('wp_user') || 'null'),
+  pickups: [],
+  theme: localStorage.getItem('wp_theme') || 'light',
 };
 
-let currentTaskId = null;
+let currentPickupId = null;
+let selectedRating = 0;
+let feedbackPickupId = null;
 
 // ---------- Helpers ----------
 function escapeHtml(str) {
@@ -24,10 +21,13 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function formatDateTime(isoStr) {
-  if (!isoStr) return '';
-  const d = new Date(`${isoStr.replace(' ', 'T')}Z`);
-  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+function formatDate(dateStr) {
+  const d = new Date(`${dateStr}T00:00:00`);
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function capitalize(str) {
+  return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
 function $(id) {
@@ -40,6 +40,15 @@ function showModal(id) {
 
 function hideModal(id) {
   $(id).classList.add('hidden');
+}
+
+let toastTimer;
+function toast(msg) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.add('hidden'), 3500);
 }
 
 // ---------- API ----------
@@ -68,8 +77,8 @@ async function api(path, options = {}) {
 function saveSession(data) {
   state.token = data.token;
   state.user = data.user;
-  localStorage.setItem('tf_token', data.token);
-  localStorage.setItem('tf_user', JSON.stringify(data.user));
+  localStorage.setItem('wp_token', data.token);
+  localStorage.setItem('wp_user', JSON.stringify(data.user));
 }
 
 function showApp() {
@@ -85,13 +94,9 @@ function showAuth() {
 function logout() {
   state.token = null;
   state.user = null;
-  state.tasks = [];
-  state.projects = [];
-  state.tags = [];
-  state.projectId = null;
-  state.tagId = null;
-  localStorage.removeItem('tf_token');
-  localStorage.removeItem('tf_user');
+  state.pickups = [];
+  localStorage.removeItem('wp_token');
+  localStorage.removeItem('wp_user');
   showAuth();
 }
 
@@ -127,7 +132,12 @@ $('register-form').addEventListener('submit', async (e) => {
   try {
     saveSession(await api('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ name: form.get('name'), email: form.get('email'), password: form.get('password') }),
+      body: JSON.stringify({
+        name: form.get('name'),
+        email: form.get('email'),
+        password: form.get('password'),
+        address: form.get('address'),
+      }),
     }));
     e.target.reset();
     await initApp();
@@ -152,7 +162,7 @@ function applyTheme(theme) {
 
 $('theme-toggle').addEventListener('click', () => {
   state.theme = state.theme === 'dark' ? 'light' : 'dark';
-  localStorage.setItem('tf_theme', state.theme);
+  localStorage.setItem('wp_theme', state.theme);
   applyTheme(state.theme);
 });
 
@@ -177,11 +187,6 @@ wireDropdown('notif-btn', 'notif-dropdown');
 wireDropdown('user-menu-btn', 'user-dropdown');
 document.addEventListener('click', closeAllDropdowns);
 
-// ---------- Sidebar (mobile) ----------
-$('sidebar-toggle').addEventListener('click', () => {
-  $('sidebar').classList.toggle('open');
-});
-
 // ---------- Avatar ----------
 function renderAvatar() {
   const initial = (state.user.name || '?').trim().charAt(0).toUpperCase();
@@ -189,391 +194,158 @@ function renderAvatar() {
   $('user-dropdown-name').textContent = state.user.name;
 }
 
-// ---------- Projects ----------
-async function loadProjects() {
-  state.projects = await api('/projects');
-  renderProjectList();
-}
-
-function renderProjectList() {
-  const allActive = !state.projectId;
-  let html = `<li class="side-item ${allActive ? 'active' : ''}" data-id="">
-    <span class="dot" style="background:#9aa39d"></span><span class="side-item-label">All projects</span>
-  </li>`;
-  html += state.projects
-    .map(
-      (p) => `<li class="side-item ${String(state.projectId) === String(p.id) ? 'active' : ''}" data-id="${p.id}">
-        <span class="dot" style="background:${p.color}"></span>
-        <span class="side-item-label">${escapeHtml(p.name)}</span>
-        <span class="side-item-count">${p.open_count}</span>
-        <button class="side-item-delete" data-id="${p.id}" title="Delete project" type="button">×</button>
-      </li>`
-    )
-    .join('');
-  $('project-list').innerHTML = html;
-}
-
-async function deleteProject(id) {
-  if (!confirm('Delete this project? Its tasks will be kept but unassigned.')) return;
-  try {
-    await api(`/projects/${id}`, { method: 'DELETE' });
-    if (String(state.projectId) === String(id)) state.projectId = null;
-    await loadProjects();
-    await loadTasks();
-  } catch (err) {
-    alert(err.message);
-  }
-}
-
-$('project-list').addEventListener('click', (e) => {
-  const delBtn = e.target.closest('.side-item-delete');
-  if (delBtn) {
-    e.stopPropagation();
-    deleteProject(delBtn.dataset.id);
-    return;
-  }
-  const item = e.target.closest('.side-item');
-  if (!item) return;
-  state.projectId = item.dataset.id || null;
-  renderProjectList();
-  updateViewTitle();
-  loadTasks();
-  $('sidebar').classList.remove('open');
-});
-
-$('new-project-btn').addEventListener('click', () => {
-  $('project-form').reset();
-  $('project-modal-error').classList.add('hidden');
-  showModal('project-modal');
-});
-['project-modal-close', 'project-modal-cancel'].forEach((id) =>
-  $(id).addEventListener('click', () => hideModal('project-modal'))
-);
-$('project-modal').addEventListener('click', (e) => {
-  if (e.target.id === 'project-modal') hideModal('project-modal');
-});
-$('project-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const form = e.target;
-  try {
-    await api('/projects', {
-      method: 'POST',
-      body: JSON.stringify({ name: form.elements.name.value, color: form.elements.color.value }),
-    });
-    hideModal('project-modal');
-    await loadProjects();
-  } catch (err) {
-    const p = $('project-modal-error');
-    p.textContent = err.message;
-    p.classList.remove('hidden');
-  }
-});
-
-function renderProjectOptions(selectedId) {
-  const select = $('task-project-select');
-  select.innerHTML =
-    '<option value="">No project</option>' +
-    state.projects
-      .map((p) => `<option value="${p.id}" ${String(p.id) === String(selectedId) ? 'selected' : ''}>${escapeHtml(p.name)}</option>`)
-      .join('');
-}
-
-// ---------- Tags ----------
-async function loadTags() {
-  state.tags = await api('/tags');
-  renderTagList();
-}
-
-function renderTagList() {
-  if (state.tags.length === 0) {
-    $('tag-list').innerHTML = '<li class="hint-text">No tags yet.</li>';
-    return;
-  }
-  $('tag-list').innerHTML = state.tags
-    .map(
-      (t) => `<li class="side-item ${String(state.tagId) === String(t.id) ? 'active' : ''}" data-id="${t.id}">
-        <span class="dot" style="background:${t.color}"></span>
-        <span class="side-item-label">${escapeHtml(t.name)}</span>
-        <button class="side-item-delete" data-id="${t.id}" title="Delete tag" type="button">×</button>
-      </li>`
-    )
-    .join('');
-}
-
-async function deleteTag(id) {
-  if (!confirm('Delete this tag?')) return;
-  try {
-    await api(`/tags/${id}`, { method: 'DELETE' });
-    if (String(state.tagId) === String(id)) state.tagId = null;
-    await loadTags();
-    await loadTasks();
-  } catch (err) {
-    alert(err.message);
-  }
-}
-
-$('tag-list').addEventListener('click', (e) => {
-  const delBtn = e.target.closest('.side-item-delete');
-  if (delBtn) {
-    e.stopPropagation();
-    deleteTag(delBtn.dataset.id);
-    return;
-  }
-  const item = e.target.closest('.side-item');
-  if (!item || !item.dataset.id) return;
-  state.tagId = String(state.tagId) === String(item.dataset.id) ? null : item.dataset.id;
-  renderTagList();
-  loadTasks();
-});
-
-$('new-tag-btn').addEventListener('click', () => {
-  $('tag-form').reset();
-  $('tag-modal-error').classList.add('hidden');
-  showModal('tag-modal');
-});
-['tag-modal-close', 'tag-modal-cancel'].forEach((id) => $(id).addEventListener('click', () => hideModal('tag-modal')));
-$('tag-modal').addEventListener('click', (e) => {
-  if (e.target.id === 'tag-modal') hideModal('tag-modal');
-});
-$('tag-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const form = e.target;
-  try {
-    await api('/tags', {
-      method: 'POST',
-      body: JSON.stringify({ name: form.elements.name.value, color: form.elements.color.value }),
-    });
-    hideModal('tag-modal');
-    await loadTags();
-  } catch (err) {
-    const p = $('tag-modal-error');
-    p.textContent = err.message;
-    p.classList.remove('hidden');
-  }
-});
-
-function renderTagPicker(selectedIds) {
-  const picker = $('tag-picker');
-  if (state.tags.length === 0) {
-    picker.innerHTML = '<p class="hint-text">No tags yet — create one from the sidebar.</p>';
-    return;
-  }
-  const selected = selectedIds.map(String);
-  picker.innerHTML = state.tags
-    .map(
-      (t) => `<label class="tag-chip-option" style="--chip-color:${t.color}">
-        <input type="checkbox" value="${t.id}" ${selected.includes(String(t.id)) ? 'checked' : ''} />
-        <span>${escapeHtml(t.name)}</span>
-      </label>`
-    )
-    .join('');
-}
-
-// ---------- Task rendering ----------
-function taskCardHtml(task, { draggable }) {
-  const overdue = task.due_date && task.due_date < todayStr() && task.status !== 'completed';
-  const subtaskPct = task.subtask_count ? Math.round((task.subtask_done / task.subtask_count) * 100) : null;
-
-  return `
-    <div class="task-card priority-${task.priority}${task.status === 'completed' ? ' done' : ''}" data-id="${task.id}" ${draggable ? 'draggable="true"' : ''}>
-      <input type="checkbox" class="task-check" ${task.status === 'completed' ? 'checked' : ''} title="Mark complete" />
-      <div class="task-body">
-        <div class="task-title">${escapeHtml(task.title)}</div>
-        ${task.description ? `<div class="task-desc">${escapeHtml(task.description)}</div>` : ''}
-        ${subtaskPct !== null ? `<div class="subtask-mini"><div class="subtask-mini-bar"><div class="subtask-mini-fill" style="width:${subtaskPct}%"></div></div><span>${task.subtask_done}/${task.subtask_count}</span></div>` : ''}
-        <div class="task-meta">
-          ${task.project_name ? `<span class="badge project-badge" style="background:${task.project_color}22;color:${task.project_color}"><span class="dot" style="background:${task.project_color}"></span>${escapeHtml(task.project_name)}</span>` : ''}
-          <span class="badge priority-${task.priority}">${task.priority}</span>
-          ${!draggable ? `<span class="badge status">${task.status.replace('-', ' ')}</span>` : ''}
-          ${task.due_date ? `<span class="badge due${overdue ? ' overdue' : ''}">${overdue ? 'Overdue ' : 'Due '}${task.due_date}</span>` : ''}
-          ${(task.tags || []).map((t) => `<span class="badge tag-badge" style="background:${t.color}22;color:${t.color}">${escapeHtml(t.name)}</span>`).join('')}
-          ${task.comment_count ? `<span class="badge comment-count">💬 ${task.comment_count}</span>` : ''}
-        </div>
-      </div>
-      <div class="task-actions">
-        <button class="icon-btn edit-btn" type="button" title="Edit">✏️</button>
-        <button class="icon-btn delete-btn" type="button" title="Delete">🗑️</button>
-      </div>
-    </div>
-  `;
-}
-
-function attachCardHandlers(container) {
-  container.querySelectorAll('.task-card').forEach((card) => {
-    const id = card.dataset.id;
-    card.querySelector('.task-check').addEventListener('change', (e) => quickToggleStatus(id, e.target.checked));
-    card.querySelector('.edit-btn').addEventListener('click', (e) => {
-      e.stopPropagation();
-      openTaskModal(id);
-    });
-    card.querySelector('.delete-btn').addEventListener('click', (e) => {
-      e.stopPropagation();
-      deleteTask(id);
-    });
-    card.querySelector('.task-body').addEventListener('click', () => openTaskModal(id));
-  });
-}
-
-function attachCardDragHandlers(container) {
-  container.querySelectorAll('.task-card[draggable="true"]').forEach((card) => {
-    card.addEventListener('dragstart', (e) => {
-      e.dataTransfer.setData('text/plain', card.dataset.id);
-      e.dataTransfer.effectAllowed = 'move';
-      card.classList.add('dragging');
-    });
-    card.addEventListener('dragend', () => card.classList.remove('dragging'));
-  });
-}
-
-function setupKanbanColumns() {
-  document.querySelectorAll('.kanban-cards').forEach((container) => {
-    container.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      container.classList.add('drag-over');
-    });
-    container.addEventListener('dragleave', () => container.classList.remove('drag-over'));
-    container.addEventListener('drop', async (e) => {
-      e.preventDefault();
-      container.classList.remove('drag-over');
-      const taskId = e.dataTransfer.getData('text/plain');
-      const status = container.dataset.status;
-      if (!taskId) return;
-      try {
-        await api(`/tasks/${taskId}`, { method: 'PUT', body: JSON.stringify({ status }) });
-        await loadTasks();
-        await loadNotifications();
-      } catch (err) {
-        alert(err.message);
-      }
-    });
-  });
-}
-
-async function quickToggleStatus(id, checked) {
-  try {
-    await api(`/tasks/${id}`, { method: 'PUT', body: JSON.stringify({ status: checked ? 'completed' : 'pending' }) });
-    await loadTasks();
-    await loadNotifications();
-  } catch (err) {
-    alert(err.message);
-  }
-}
-
-async function deleteTask(id) {
-  if (!confirm('Delete this task?')) return;
-  try {
-    await api(`/tasks/${id}`, { method: 'DELETE' });
-    await loadTasks();
-    await loadNotifications();
-  } catch (err) {
-    alert(err.message);
-  }
-}
-
-function renderStats(tasks) {
-  const total = tasks.length;
-  const done = tasks.filter((t) => t.status === 'completed').length;
-  const inProgress = tasks.filter((t) => t.status === 'in-progress').length;
-  const pending = tasks.filter((t) => t.status === 'pending').length;
-
-  $('stats').innerHTML = `
-    <div class="stat-card"><div class="num">${total}</div><div class="lbl">Total tasks</div></div>
-    <div class="stat-card"><div class="num">${pending}</div><div class="lbl">Pending</div></div>
-    <div class="stat-card"><div class="num">${inProgress}</div><div class="lbl">In progress</div></div>
-    <div class="stat-card"><div class="num">${done}</div><div class="lbl">Completed</div></div>
-  `;
-}
-
-function renderListView() {
-  const listEl = $('task-list');
-  $('empty-state').classList.toggle('hidden', state.tasks.length > 0);
-  listEl.innerHTML = state.tasks.map((t) => taskCardHtml(t, { draggable: false })).join('');
-  attachCardHandlers(listEl);
-  renderStats(state.tasks);
-}
-
-function renderKanbanView() {
-  const columns = { pending: [], 'in-progress': [], completed: [] };
-  for (const t of state.tasks) {
-    (columns[t.status] || columns.pending).push(t);
-  }
-  for (const status of Object.keys(columns)) {
-    const el = $(`kanban-${status}`);
-    el.innerHTML = columns[status].map((t) => taskCardHtml(t, { draggable: true })).join('');
-    attachCardHandlers(el);
-    attachCardDragHandlers(el);
-    $(`count-${status}`).textContent = columns[status].length;
-  }
-  renderStats(state.tasks);
-}
-
-function buildTaskQuery() {
+// ---------- Pickups ----------
+function buildQuery() {
   const params = new URLSearchParams();
-  if (state.view === 'list' && $('filter-status').value) {
-    params.set('status', $('filter-status').value);
-  }
-  const priority = $('filter-priority').value;
-  if (priority) params.set('priority', priority);
-  const search = $('search-input').value.trim();
-  if (search) params.set('search', search);
-  if (state.projectId) params.set('project_id', state.projectId);
-  if (state.tagId) params.set('tag_id', state.tagId);
+  const status = $('filter-status').value;
+  const wasteType = $('filter-waste-type').value;
+  if (status) params.set('status', status);
+  if (wasteType) params.set('waste_type', wasteType);
   return params;
 }
 
-async function loadTasks() {
-  if (state.view === 'analytics') return;
+async function loadPickups() {
   try {
-    state.tasks = await api(`/tasks?${buildTaskQuery()}`);
-    renderCurrentView();
+    state.pickups = await api(`/pickups?${buildQuery()}`);
+    renderPickups();
+    renderStats();
   } catch (err) {
     console.error(err);
   }
 }
 
-function renderCurrentView() {
-  updateViewVisibility();
-  if (state.view === 'list') renderListView();
-  else if (state.view === 'kanban') renderKanbanView();
+function renderStats() {
+  const total = state.pickups.length;
+  const scheduled = state.pickups.filter((p) => p.status === 'scheduled').length;
+  const collected = state.pickups.filter((p) => p.status === 'collected').length;
+  const missed = state.pickups.filter((p) => p.status === 'missed').length;
+
+  $('stats').innerHTML = `
+    <div class="stat-card"><div class="num">${total}</div><div class="lbl">Total pickups</div></div>
+    <div class="stat-card"><div class="num">${scheduled}</div><div class="lbl">Scheduled</div></div>
+    <div class="stat-card"><div class="num">${collected}</div><div class="lbl">Collected</div></div>
+    <div class="stat-card"><div class="num">${missed}</div><div class="lbl">Missed</div></div>
+  `;
 }
 
-function updateViewTitle() {
-  if (state.view === 'analytics') {
-    $('view-title').textContent = 'Analytics';
+const RECURRENCE_LABELS = { weekly: '🔁 Weekly', biweekly: '🔁 Every 2 weeks', monthly: '🔁 Monthly' };
+const TIME_WINDOW_LABELS = { morning: 'Morning (8am–12pm)', afternoon: 'Afternoon (12pm–4pm)', evening: 'Evening (4pm–8pm)' };
+
+function pickupCardHtml(p) {
+  const today = todayStr();
+  const overdueScheduled = p.status === 'scheduled' && p.scheduled_date < today;
+  const statusClass = overdueScheduled ? 'status-overdue' : `status-${p.status}`;
+  const statusLabel = overdueScheduled ? 'Awaiting confirmation' : capitalize(p.status);
+
+  let actionsHtml = '';
+  if (p.status === 'scheduled') {
+    actionsHtml = `
+      <button class="btn btn-sm btn-primary" data-action="collected">Mark collected</button>
+      <button class="btn btn-sm btn-outline" data-action="missed">Report missed</button>
+      <button class="btn btn-sm btn-ghost" data-action="edit">Edit</button>
+      <button class="btn btn-sm btn-danger-outline" data-action="cancel">Cancel</button>
+    `;
+  } else if (p.status === 'cancelled') {
+    actionsHtml = `<button class="btn btn-sm btn-danger-outline" data-action="delete">Delete</button>`;
+  } else if (['collected', 'missed'].includes(p.status) && p.feedback_rating === null) {
+    actionsHtml = `<button class="btn btn-sm btn-outline" data-action="feedback">Leave feedback</button>
+      <button class="btn btn-sm btn-danger-outline" data-action="delete">Delete</button>`;
+  } else {
+    actionsHtml = `<button class="btn btn-sm btn-danger-outline" data-action="delete">Delete</button>`;
+  }
+
+  const feedbackHtml =
+    p.feedback_rating !== null
+      ? `<div class="feedback-display">
+          <span class="feedback-stars">${'★'.repeat(p.feedback_rating)}${'☆'.repeat(5 - p.feedback_rating)}</span>
+          ${p.feedback_comment ? `<div class="feedback-comment">${escapeHtml(p.feedback_comment)}</div>` : ''}
+        </div>`
+      : '';
+
+  return `
+    <li class="pickup-card waste-${p.waste_type}" data-id="${p.id}">
+      <div class="pickup-top">
+        <div>
+          <div class="pickup-title">${escapeHtml(p.waste_type)} waste pickup</div>
+          <div class="pickup-address">📍 ${escapeHtml(p.address)}</div>
+        </div>
+        <span class="badge ${statusClass}">${statusLabel}</span>
+      </div>
+      ${p.notes ? `<div class="pickup-notes">${escapeHtml(p.notes)}</div>` : ''}
+      <div class="pickup-meta">
+        <span class="badge waste-${p.waste_type}">${escapeHtml(p.waste_type)}</span>
+        <span class="badge neutral">📅 ${formatDate(p.scheduled_date)}</span>
+        <span class="badge neutral">${TIME_WINDOW_LABELS[p.time_window]}</span>
+        ${p.recurrence !== 'none' ? `<span class="badge recurrence">${RECURRENCE_LABELS[p.recurrence]}</span>` : ''}
+      </div>
+      <div class="pickup-actions">${actionsHtml}</div>
+      ${feedbackHtml}
+    </li>
+  `;
+}
+
+function renderPickups() {
+  $('empty-state').classList.toggle('hidden', state.pickups.length > 0);
+  $('pickup-list').innerHTML = state.pickups.map(pickupCardHtml).join('');
+  attachCardHandlers();
+}
+
+function attachCardHandlers() {
+  document.querySelectorAll('.pickup-card').forEach((card) => {
+    const id = card.dataset.id;
+    card.querySelectorAll('[data-action]').forEach((btn) => {
+      btn.addEventListener('click', () => handleCardAction(id, btn.dataset.action));
+    });
+  });
+}
+
+async function handleCardAction(id, action) {
+  if (action === 'edit') return openPickupModal(id);
+  if (action === 'feedback') return openFeedbackModal(id);
+
+  if (action === 'collected' || action === 'missed') {
+    try {
+      const result = await api(`/pickups/${id}`, { method: 'PUT', body: JSON.stringify({ status: action }) });
+      await loadPickups();
+      await loadReminders();
+      if (result.next_pickup) {
+        toast(`Next pickup automatically scheduled for ${formatDate(result.next_pickup.scheduled_date)}.`);
+      } else {
+        toast(action === 'collected' ? 'Pickup marked as collected.' : 'Pickup marked as missed.');
+      }
+    } catch (err) {
+      alert(err.message);
+    }
     return;
   }
-  const project = state.projects.find((p) => String(p.id) === String(state.projectId));
-  $('view-title').textContent = project ? project.name : 'All Tasks';
+
+  if (action === 'cancel') {
+    if (!confirm('Cancel this pickup?')) return;
+    try {
+      await api(`/pickups/${id}`, { method: 'PUT', body: JSON.stringify({ status: 'cancelled' }) });
+      await loadPickups();
+      await loadReminders();
+    } catch (err) {
+      alert(err.message);
+    }
+    return;
+  }
+
+  if (action === 'delete') {
+    if (!confirm('Delete this pickup permanently?')) return;
+    try {
+      await api(`/pickups/${id}`, { method: 'DELETE' });
+      await loadPickups();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
 }
 
-function updateViewVisibility() {
-  $('list-view').classList.toggle('hidden', state.view !== 'list');
-  $('kanban-view').classList.toggle('hidden', state.view !== 'kanban');
-  $('analytics-view').classList.toggle('hidden', state.view !== 'analytics');
-  $('stats').classList.toggle('hidden', state.view === 'analytics');
-  $('filter-status').classList.toggle('hidden', state.view !== 'list');
-  updateViewTitle();
-}
+$('filter-status').addEventListener('change', loadPickups);
+$('filter-waste-type').addEventListener('change', loadPickups);
 
-document.querySelectorAll('.nav-item').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.nav-item').forEach((b) => b.classList.remove('active'));
-    btn.classList.add('active');
-    state.view = btn.dataset.view;
-    if (state.view === 'analytics') loadAnalytics();
-    else loadTasks();
-    $('sidebar').classList.remove('open');
-  });
-});
-
-$('search-input').addEventListener('input', () => {
-  clearTimeout(window.__tfSearchTimer);
-  window.__tfSearchTimer = setTimeout(loadTasks, 300);
-});
-$('filter-status').addEventListener('change', loadTasks);
-$('filter-priority').addEventListener('change', loadTasks);
-
-// ---------- Task modal ----------
+// ---------- Pickup modal ----------
 function clearModalError() {
   $('modal-error').classList.add('hidden');
 }
@@ -584,261 +356,173 @@ function showModalError(msg) {
   el.classList.remove('hidden');
 }
 
-async function openTaskModal(taskId) {
+async function openPickupModal(id) {
   clearModalError();
-  $('task-form').reset();
-  currentTaskId = taskId || null;
+  const form = $('pickup-form');
+  form.reset();
+  currentPickupId = id || null;
 
-  if (!taskId) {
-    $('modal-title').textContent = 'New task';
-    $('task-form').elements.id.value = '';
-    renderProjectOptions(state.projectId || '');
-    renderTagPicker([]);
-    $('task-extra').classList.add('hidden');
-    showModal('task-modal');
-    $('task-form').elements.title.focus();
+  if (!id) {
+    $('modal-title').textContent = 'Schedule a pickup';
+    form.elements.id.value = '';
+    form.elements.address.value = state.user.address || '';
+    form.elements.scheduled_date.min = todayStr();
+    showModal('pickup-modal');
+    form.elements.waste_type.focus();
     return;
   }
 
   try {
-    const task = await api(`/tasks/${taskId}`);
-    $('modal-title').textContent = 'Edit task';
-    const form = $('task-form');
-    form.elements.id.value = task.id;
-    form.elements.title.value = task.title;
-    form.elements.description.value = task.description || '';
-    renderProjectOptions(task.project_id || '');
-    form.elements.priority.value = task.priority;
-    form.elements.status.value = task.status;
-    form.elements.due_date.value = task.due_date || '';
-    renderTagPicker((task.tags || []).map((t) => t.id));
-    $('task-extra').classList.remove('hidden');
-    renderSubtasks(task.subtasks || []);
-    renderComments(task.comments || []);
-    showModal('task-modal');
+    const pickup = await api(`/pickups/${id}`);
+    $('modal-title').textContent = 'Edit pickup';
+    form.elements.id.value = pickup.id;
+    form.elements.waste_type.value = pickup.waste_type;
+    form.elements.address.value = pickup.address;
+    form.elements.scheduled_date.value = pickup.scheduled_date;
+    form.elements.time_window.value = pickup.time_window;
+    form.elements.recurrence.value = pickup.recurrence;
+    form.elements.notes.value = pickup.notes || '';
+    showModal('pickup-modal');
   } catch (err) {
     alert(err.message);
   }
 }
 
-function closeTaskModal() {
-  hideModal('task-modal');
-  currentTaskId = null;
-  loadTasks();
-  loadNotifications();
+function closePickupModal() {
+  hideModal('pickup-modal');
+  currentPickupId = null;
 }
 
-$('new-task-btn').addEventListener('click', () => openTaskModal(null));
-$('modal-close').addEventListener('click', closeTaskModal);
-$('modal-cancel').addEventListener('click', closeTaskModal);
-$('task-modal').addEventListener('click', (e) => {
-  if (e.target.id === 'task-modal') closeTaskModal();
+$('new-pickup-btn').addEventListener('click', () => openPickupModal(null));
+$('modal-close').addEventListener('click', closePickupModal);
+$('modal-cancel').addEventListener('click', closePickupModal);
+$('pickup-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'pickup-modal') closePickupModal();
 });
 
-$('task-form').addEventListener('submit', async (e) => {
+$('pickup-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const form = e.target;
   const id = form.elements.id.value;
-  const tagIds = Array.from(document.querySelectorAll('#tag-picker input[type=checkbox]:checked')).map((el) =>
-    Number(el.value)
-  );
   const payload = {
-    title: form.elements.title.value,
-    description: form.elements.description.value,
-    project_id: form.elements.project_id.value || null,
-    priority: form.elements.priority.value,
-    status: form.elements.status.value,
-    due_date: form.elements.due_date.value || null,
-    tag_ids: tagIds,
+    waste_type: form.elements.waste_type.value,
+    address: form.elements.address.value,
+    scheduled_date: form.elements.scheduled_date.value,
+    time_window: form.elements.time_window.value,
+    recurrence: form.elements.recurrence.value,
+    notes: form.elements.notes.value,
   };
 
   try {
     if (id) {
-      await api(`/tasks/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+      await api(`/pickups/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+      toast('Pickup updated.');
     } else {
-      await api('/tasks', { method: 'POST', body: JSON.stringify(payload) });
+      await api('/pickups', { method: 'POST', body: JSON.stringify(payload) });
+      toast('Pickup scheduled.');
     }
-    closeTaskModal();
+    closePickupModal();
+    await loadPickups();
+    await loadReminders();
   } catch (err) {
     showModalError(err.message);
   }
 });
 
-// ---------- Subtasks ----------
-function renderSubtasks(subtasks) {
-  const total = subtasks.length;
-  const done = subtasks.filter((s) => s.completed).length;
-  $('subtask-progress').textContent = total ? `${done}/${total}` : '';
-  $('subtask-list').innerHTML = subtasks
-    .map(
-      (s) => `<li class="subtask-item ${s.completed ? 'done' : ''}" data-id="${s.id}">
-        <input type="checkbox" class="subtask-check" ${s.completed ? 'checked' : ''} />
-        <span class="subtask-title">${escapeHtml(s.title)}</span>
-        <button class="icon-btn subtask-delete" type="button" title="Delete">×</button>
-      </li>`
-    )
-    .join('');
+// ---------- Feedback modal ----------
+function setRating(value) {
+  selectedRating = value;
+  document.querySelectorAll('#star-picker .star').forEach((star) => {
+    star.classList.toggle('active', Number(star.dataset.value) <= value);
+  });
+  $('feedback-form').elements.rating.value = value;
 }
 
-$('subtask-form').addEventListener('submit', async (e) => {
+document.querySelectorAll('#star-picker .star').forEach((star) => {
+  star.addEventListener('click', () => setRating(Number(star.dataset.value)));
+});
+
+function openFeedbackModal(id) {
+  feedbackPickupId = id;
+  $('feedback-form').reset();
+  $('feedback-error').classList.add('hidden');
+  setRating(0);
+  showModal('feedback-modal');
+}
+
+function closeFeedbackModal() {
+  hideModal('feedback-modal');
+  feedbackPickupId = null;
+}
+
+$('feedback-modal-close').addEventListener('click', closeFeedbackModal);
+$('feedback-modal-cancel').addEventListener('click', closeFeedbackModal);
+$('feedback-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'feedback-modal') closeFeedbackModal();
+});
+
+$('feedback-form').addEventListener('submit', async (e) => {
   e.preventDefault();
-  if (!currentTaskId) return;
-  const form = e.target;
-  try {
-    await api(`/tasks/${currentTaskId}/subtasks`, {
-      method: 'POST',
-      body: JSON.stringify({ title: form.elements.title.value }),
-    });
-    form.reset();
-    renderSubtasks(await api(`/tasks/${currentTaskId}/subtasks`));
-  } catch (err) {
-    alert(err.message);
-  }
-});
-
-$('subtask-list').addEventListener('click', async (e) => {
-  const item = e.target.closest('.subtask-item');
-  if (!item || !currentTaskId) return;
-  const id = item.dataset.id;
-
-  if (e.target.classList.contains('subtask-check')) {
-    try {
-      await api(`/tasks/${currentTaskId}/subtasks/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify({ completed: e.target.checked }),
-      });
-      renderSubtasks(await api(`/tasks/${currentTaskId}/subtasks`));
-    } catch (err) {
-      alert(err.message);
-    }
-  } else if (e.target.classList.contains('subtask-delete')) {
-    if (!confirm('Delete this subtask?')) return;
-    try {
-      await api(`/tasks/${currentTaskId}/subtasks/${id}`, { method: 'DELETE' });
-      renderSubtasks(await api(`/tasks/${currentTaskId}/subtasks`));
-    } catch (err) {
-      alert(err.message);
-    }
-  }
-});
-
-// ---------- Comments ----------
-function renderComments(comments) {
-  if (comments.length === 0) {
-    $('comment-list').innerHTML = '<li class="hint-text">No comments yet.</li>';
+  if (!feedbackPickupId) return;
+  if (!selectedRating) {
+    const el = $('feedback-error');
+    el.textContent = 'Please select a star rating.';
+    el.classList.remove('hidden');
     return;
   }
-  $('comment-list').innerHTML = comments
-    .map(
-      (c) => `<li class="comment-item" data-id="${c.id}">
-        <div class="comment-head"><strong>${escapeHtml(c.author_name)}</strong><span class="comment-time">${formatDateTime(c.created_at)}</span></div>
-        <div class="comment-body">${escapeHtml(c.body)}</div>
-        <button class="icon-btn comment-delete" type="button" title="Delete">×</button>
-      </li>`
-    )
-    .join('');
-}
-
-$('comment-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  if (!currentTaskId) return;
   const form = e.target;
   try {
-    await api(`/tasks/${currentTaskId}/comments`, {
+    await api(`/pickups/${feedbackPickupId}/feedback`, {
       method: 'POST',
-      body: JSON.stringify({ body: form.elements.body.value }),
+      body: JSON.stringify({ rating: selectedRating, comment: form.elements.comment.value }),
     });
-    form.reset();
-    renderComments(await api(`/tasks/${currentTaskId}/comments`));
+    closeFeedbackModal();
+    toast('Thanks for your feedback!');
+    await loadPickups();
   } catch (err) {
-    alert(err.message);
+    const el = $('feedback-error');
+    el.textContent = err.message;
+    el.classList.remove('hidden');
   }
 });
 
-$('comment-list').addEventListener('click', async (e) => {
-  if (!e.target.classList.contains('comment-delete') || !currentTaskId) return;
-  const item = e.target.closest('.comment-item');
-  if (!confirm('Delete this comment?')) return;
+// ---------- Reminders ----------
+async function loadReminders() {
   try {
-    await api(`/tasks/${currentTaskId}/comments/${item.dataset.id}`, { method: 'DELETE' });
-    renderComments(await api(`/tasks/${currentTaskId}/comments`));
+    const list = await api('/pickups?due_soon=1');
+    renderReminders(list);
   } catch (err) {
-    alert(err.message);
+    console.error(err);
   }
-});
+}
 
-// ---------- Notifications ----------
-function renderNotifications(list) {
+function renderReminders(list) {
   const badge = $('notif-badge');
   badge.textContent = list.length;
   badge.classList.toggle('hidden', list.length === 0);
 
+  const banner = $('reminder-banner');
   if (list.length === 0) {
-    $('notif-list').innerHTML = '<li class="hint-text">Nothing due soon 🎉</li>';
+    banner.classList.add('hidden');
+  } else {
+    banner.classList.remove('hidden');
+    $('reminder-text').textContent =
+      list.length === 1
+        ? `You have 1 pickup coming up: ${list[0].waste_type} waste on ${formatDate(list[0].scheduled_date)}.`
+        : `You have ${list.length} pickups coming up in the next 2 days.`;
+  }
+
+  if (list.length === 0) {
+    $('notif-list').innerHTML = '<li class="hint-text">No pickups due soon 🎉</li>';
     return;
   }
   $('notif-list').innerHTML = list
-    .map((t) => {
-      const overdue = t.due_date < todayStr();
-      return `<li class="notif-item" data-id="${t.id}">
-        <span class="notif-title">${escapeHtml(t.title)}</span>
-        <span class="badge due${overdue ? ' overdue' : ''}">${overdue ? 'Overdue ' : 'Due '}${t.due_date}</span>
-      </li>`;
-    })
+    .map(
+      (p) => `<li class="notif-item">
+        <strong>${escapeHtml(capitalize(p.waste_type))}</strong> — ${formatDate(p.scheduled_date)} (${TIME_WINDOW_LABELS[p.time_window]})
+      </li>`
+    )
     .join('');
-}
-
-$('notif-list').addEventListener('click', (e) => {
-  const item = e.target.closest('.notif-item');
-  if (!item) return;
-  closeAllDropdowns();
-  openTaskModal(item.dataset.id);
-});
-
-async function loadNotifications() {
-  try {
-    renderNotifications(await api('/tasks?due_soon=1'));
-  } catch (err) {
-    console.error(err);
-  }
-}
-
-// ---------- Analytics ----------
-async function loadAnalytics() {
-  updateViewVisibility();
-  try {
-    renderAnalytics(await api('/analytics'));
-  } catch (err) {
-    console.error(err);
-  }
-}
-
-function renderAnalytics(data) {
-  $('analytics-tiles').innerHTML = `
-    <div class="stat-card"><div class="num">${data.total}</div><div class="lbl">Total tasks</div></div>
-    <div class="stat-card"><div class="num">${data.completed}</div><div class="lbl">Completed</div></div>
-    <div class="stat-card"><div class="num">${data.completionRate}%</div><div class="lbl">Completion rate</div></div>
-    <div class="stat-card"><div class="num">${data.overdue}</div><div class="lbl">Overdue</div></div>
-  `;
-
-  const statusOrder = ['pending', 'in-progress', 'completed'];
-  const statusData = statusOrder.map((s) => ({
-    label: s,
-    count: (data.byStatus.find((r) => r.status === s) || { count: 0 }).count,
-  }));
-  $('chart-status').innerHTML = Charts.donutChart(statusData, Charts.STATUS_COLORS);
-  $('legend-status').innerHTML = statusData
-    .map((d) => `<div class="legend-item"><span class="dot" style="background:${Charts.STATUS_COLORS[d.label]}"></span>${Charts.STATUS_LABELS[d.label]} (${d.count})</div>`)
-    .join('');
-
-  const priorityOrder = ['high', 'medium', 'low'];
-  const priorityData = priorityOrder.map((p) => ({
-    label: p,
-    count: (data.byPriority.find((r) => r.priority === p) || { count: 0 }).count,
-  }));
-  $('chart-priority').innerHTML = Charts.barChart(priorityData, Charts.PRIORITY_COLORS);
-
-  $('chart-trend').innerHTML = Charts.lineChart(data.trend);
 }
 
 // ---------- Profile ----------
@@ -846,6 +530,7 @@ $('profile-btn').addEventListener('click', () => {
   const form = $('profile-form');
   form.elements.name.value = state.user.name;
   form.elements.email.value = state.user.email;
+  form.elements.address.value = state.user.address || '';
   $('profile-error').classList.add('hidden');
   $('profile-success').classList.add('hidden');
   $('password-form').reset();
@@ -863,9 +548,13 @@ $('profile-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const form = e.target;
   try {
-    const updated = await api('/users/me', { method: 'PUT', body: JSON.stringify({ name: form.elements.name.value }) });
+    const updated = await api('/users/me', {
+      method: 'PUT',
+      body: JSON.stringify({ name: form.elements.name.value, address: form.elements.address.value }),
+    });
     state.user.name = updated.name;
-    localStorage.setItem('tf_user', JSON.stringify(state.user));
+    state.user.address = updated.address;
+    localStorage.setItem('wp_user', JSON.stringify(state.user));
     renderAvatar();
     $('profile-error').classList.add('hidden');
     const s = $('profile-success');
@@ -907,11 +596,8 @@ $('password-form').addEventListener('submit', async (e) => {
 async function initApp() {
   showApp();
   renderAvatar();
-  setupKanbanColumns();
-  await loadProjects();
-  await loadTags();
-  await loadTasks();
-  await loadNotifications();
+  await loadPickups();
+  await loadReminders();
 }
 
 applyTheme(state.theme);

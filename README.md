@@ -1,23 +1,23 @@
-# TaskFlow — 3MTT Task Manager
+# EcoPickup — Waste Pickup Scheduler
 
-A full-stack task management web application built as a capstone project for the **3MTT (3 Million Technical Talent) Software Development track**.
+A full-stack web app for scheduling waste pickups, built for the **3MTT (3 Million Technical Talent) Software Development track — SD-14: Waste Pickup Scheduler**.
 
-TaskFlow lets users create an account, organize work into projects, track tasks on a list or a drag-and-drop Kanban board, break tasks into subtasks, tag and comment on them, and see their productivity on an analytics dashboard.
+**Problem:** Waste pickups are unreliable — residents don't have a simple way to book them, get reminded, or report whether collection actually happened.
+
+**Solution:** EcoPickup lets residents schedule one-off or recurring pickups, see reminders for anything due soon, self-report whether a pickup was collected or missed, and leave feedback on the service.
 
 ## Features
 
-- **User accounts** — register and log in with secure password hashing (bcrypt) and JWT-based sessions; edit your profile and change your password
-- **Projects** — organize tasks into color-coded projects
-- **Tags** — flexible, color-coded labels you can attach to any task
-- **List view** — the classic task list with search and filters
-- **Kanban board** — drag and drop tasks between To Do / In Progress / Done columns
-- **Subtasks** — break a task into a checklist with a live progress bar
-- **Comments** — leave notes on a task as you work through it
-- **Analytics dashboard** — custom SVG charts for tasks by status, tasks by priority, and a 14-day completion trend, plus completion-rate and overdue stats
-- **Notifications** — a bell icon that surfaces tasks due soon or overdue
+- **User accounts** — register (with a default pickup address) and log in with secure password hashing (bcrypt) and JWT-based sessions
+- **Scheduling** — book a pickup with waste type (general / recyclable / organic / hazardous), address, date, time window, and optional notes
+- **Recurring pickups** — set a pickup to repeat weekly, every 2 weeks, or monthly; the next occurrence is automatically scheduled as soon as the current one is marked collected or missed
+- **Reminders** — a banner and notification bell surface any scheduled pickup due within the next 2 days
+- **Status tracking** — mark a pickup as collected, missed, or cancel it; overdue-but-unconfirmed pickups are flagged as "Awaiting confirmation"
+- **Feedback** — rate a collected/missed pickup 1–5 stars with an optional comment
+- **Filters** — filter your pickups by status or waste type
+- **Dashboard stats** — live counts of total, scheduled, collected, and missed pickups
 - **Dark mode** — toggle with a saved preference
-- **Due dates** — with overdue highlighting
-- **Responsive UI** — works on desktop and mobile, with a collapsible sidebar
+- **Responsive UI** — works on desktop and mobile
 
 ## Tech Stack
 
@@ -26,7 +26,7 @@ TaskFlow lets users create an account, organize work into projects, track tasks 
 | Backend   | Node.js, Express 5                      |
 | Database  | SQLite (Node's built-in `node:sqlite`)  |
 | Auth      | bcryptjs (hashing), jsonwebtoken        |
-| Frontend  | HTML, CSS, vanilla JavaScript (SPA), custom dependency-free SVG charts |
+| Frontend  | HTML, CSS, vanilla JavaScript (SPA)     |
 
 ## Getting Started
 
@@ -39,13 +39,14 @@ TaskFlow lets users create an account, organize work into projects, track tasks 
 ```bash
 git clone https://github.com/teesarmarvish24/3MTT-PROJECT-BUILDING.git
 cd 3MTT-PROJECT-BUILDING
+git checkout waste-pickup-scheduler
 npm install
 npm start
 ```
 
 Then open **http://localhost:3000** in your browser.
 
-The SQLite database is created automatically at `data/taskflow.db` on first run.
+The SQLite database is created automatically at `data/waste-pickup.db` on first run.
 
 For development with auto-reload:
 
@@ -65,52 +66,40 @@ All endpoints below (except `/api/auth/*` and `/api/health`) require an `Authori
 
 ### Auth
 
-| Method | Endpoint             | Description                            |
-|--------|----------------------|----------------------------------------|
-| POST   | `/api/auth/register` | Create account `{ name, email, password }` |
-| POST   | `/api/auth/login`    | Log in `{ email, password }` → returns JWT |
+| Method | Endpoint             | Description                                         |
+|--------|-----------------------|------------------------------------------------------|
+| POST   | `/api/auth/register`  | Create account `{ name, email, password, address }` |
+| POST   | `/api/auth/login`     | Log in `{ email, password }` → returns JWT           |
 
-### Tasks
+### Pickups
 
-| Method | Endpoint         | Description                                          |
-|--------|------------------|------------------------------------------------------|
-| GET    | `/api/tasks`     | List your tasks (`?status=`, `?priority=`, `?search=`, `?project_id=`, `?tag_id=`, `?due_soon=1`) |
-| GET    | `/api/tasks/:id` | Full task detail, including tags, subtasks, comments |
-| POST   | `/api/tasks`     | Create task `{ title, description, priority, status, due_date, project_id, tag_ids }` |
-| PUT    | `/api/tasks/:id` | Update any task field                                |
-| DELETE | `/api/tasks/:id` | Delete a task                                        |
+| Method | Endpoint          | Description                                                  |
+|--------|-------------------|----------------------------------------------------------------|
+| GET    | `/api/pickups`     | List your pickups (`?status=`, `?waste_type=`, `?due_soon=1`) |
+| GET    | `/api/pickups/:id` | Full pickup detail, including feedback                       |
+| POST   | `/api/pickups`     | Schedule a pickup `{ waste_type, address, scheduled_date, time_window, recurrence, notes }` |
+| PUT    | `/api/pickups/:id` | Update / reschedule / change status (auto-creates the next occurrence when a recurring pickup is resolved) |
+| DELETE | `/api/pickups/:id` | Delete a pickup                                               |
 
-### Subtasks & comments (nested under a task)
+### Feedback (nested under a pickup)
 
-| Method | Endpoint                              | Description               |
-|--------|----------------------------------------|----------------------------|
-| GET/POST | `/api/tasks/:id/subtasks`            | List / add a subtask `{ title }` |
-| PUT/DELETE | `/api/tasks/:id/subtasks/:subId`   | Toggle/rename or delete a subtask |
-| GET/POST | `/api/tasks/:id/comments`            | List / add a comment `{ body }` |
-| DELETE | `/api/tasks/:id/comments/:commentId`   | Delete a comment          |
+| Method | Endpoint                    | Description                                     |
+|--------|------------------------------|--------------------------------------------------|
+| POST   | `/api/pickups/:id/feedback`  | Leave feedback `{ rating (1-5), comment }` — only once a pickup is collected or missed |
+| GET    | `/api/pickups/:id/feedback`  | View feedback for a pickup                       |
 
-### Projects & tags
+### Profile
 
-| Method | Endpoint            | Description                          |
-|--------|---------------------|---------------------------------------|
-| GET/POST | `/api/projects`   | List / create a project `{ name, color }` |
-| PUT/DELETE | `/api/projects/:id` | Update / delete a project        |
-| GET/POST | `/api/tags`       | List / create a tag `{ name, color }` |
-| DELETE | `/api/tags/:id`     | Delete a tag                          |
-
-### Analytics & profile
-
-| Method | Endpoint               | Description                              |
-|--------|------------------------|-------------------------------------------|
-| GET    | `/api/analytics`       | Status/priority breakdown, completion rate, overdue count, 14-day trend |
-| GET/PUT | `/api/users/me`       | View / update your profile `{ name }`     |
-| PUT    | `/api/users/me/password` | Change password `{ current_password, new_password }` |
+| Method | Endpoint                  | Description                                         |
+|--------|----------------------------|-------------------------------------------------------|
+| GET/PUT | `/api/users/me`           | View / update your profile `{ name, address }`       |
+| PUT    | `/api/users/me/password`   | Change password `{ current_password, new_password }` |
 
 ### Other
 
-| Method | Endpoint      | Description        |
-|--------|---------------|--------------------|
-| GET    | `/api/health` | Server health check |
+| Method | Endpoint      | Description          |
+|--------|---------------|-----------------------|
+| GET    | `/api/health` | Server health check   |
 
 ## Project Structure
 
@@ -121,17 +110,13 @@ All endpoints below (except `/api/auth/*` and `/api/health`) require an `Authori
 │   └── authenticate.js    # JWT verification middleware
 ├── routes/
 │   ├── auth.js            # Register / login endpoints
-│   ├── tasks.js           # Task, subtask & comment endpoints
-│   ├── projects.js        # Project endpoints
-│   ├── tags.js             # Tag endpoints
-│   ├── users.js            # Profile & password endpoints
-│   └── analytics.js        # Analytics dashboard endpoint
+│   ├── pickups.js         # Pickup scheduling, status, feedback endpoints
+│   └── users.js           # Profile & password endpoints
 └── public/
     ├── index.html          # Single-page frontend
     ├── style.css           # Styles (incl. dark mode)
     └── js/
-        ├── charts.js       # Dependency-free SVG chart helpers
-        └── app.js           # Frontend logic
+        └── app.js          # Frontend logic
 ```
 
 ## License

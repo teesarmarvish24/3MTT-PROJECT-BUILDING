@@ -7,19 +7,23 @@ const router = express.Router();
 router.use(authenticate);
 
 router.get('/me', (req, res) => {
-  const user = db.prepare('SELECT id, name, email, created_at FROM users WHERE id = ?').get(req.user.id);
+  const user = db.prepare('SELECT id, name, email, address, created_at FROM users WHERE id = ?').get(req.user.id);
   if (!user) return res.status(404).json({ error: 'User not found.' });
   res.json(user);
 });
 
 router.put('/me', (req, res) => {
-  const { name } = req.body || {};
+  const { name, address } = req.body || {};
   if (!name || !String(name).trim()) {
     return res.status(400).json({ error: 'Name is required.' });
   }
 
-  db.prepare('UPDATE users SET name = ? WHERE id = ?').run(String(name).trim(), req.user.id);
-  res.json(db.prepare('SELECT id, name, email, created_at FROM users WHERE id = ?').get(req.user.id));
+  db.prepare('UPDATE users SET name = ?, address = ? WHERE id = ?').run(
+    String(name).trim(),
+    address !== undefined ? String(address).trim() : '',
+    req.user.id
+  );
+  res.json(db.prepare('SELECT id, name, email, address, created_at FROM users WHERE id = ?').get(req.user.id));
 });
 
 router.put('/me/password', (req, res) => {
