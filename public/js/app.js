@@ -10,6 +10,27 @@ let currentPickupId = null;
 let selectedRating = 0;
 let feedbackPickupId = null;
 
+// ---------- Icons ----------
+const ICONS = {
+  mapPin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-7.58 7-12.5A7 7 0 0 0 5 9.5C5 14.42 12 22 12 22Z"/><circle cx="12" cy="9.5" r="2.3"/></svg>',
+  calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="16" rx="2"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg>',
+  repeat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h13l-3-3M20 17H7l3 3"/></svg>',
+  clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>',
+  checkCircle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg>',
+  alertTriangle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 21.5 20h-19L12 3.5Z"/><path d="M12 10v4M12 17h.01"/></svg>',
+  xCircle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"/></svg>',
+  leaf: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 4C10 4 4 10 4 18c8 0 14-6 14-14Z"/><path d="M6 18c3-3 8-8 12-12"/></svg>',
+  recycle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 0 1 13.9-5.4M20 12a8 8 0 0 1-13.9 5.4"/><path d="M16 4.5v3h-3M8 19.5v-3h3"/></svg>',
+  bin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M7 7l1 13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-13"/></svg>',
+  pencil: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/></svg>',
+};
+
+const WASTE_ICONS = { general: ICONS.bin, recyclable: ICONS.recycle, organic: ICONS.leaf, hazardous: ICONS.alertTriangle };
+
+function icon(name) {
+  return `<span class="icon">${ICONS[name]}</span>`;
+}
+
 // ---------- Helpers ----------
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (c) => ({
@@ -157,7 +178,6 @@ $('logout-btn').addEventListener('click', logout);
 // ---------- Theme ----------
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
-  $('theme-toggle').textContent = theme === 'dark' ? '☀️' : '🌙';
 }
 
 $('theme-toggle').addEventListener('click', () => {
@@ -228,30 +248,37 @@ function renderStats() {
   `;
 }
 
-const RECURRENCE_LABELS = { weekly: '🔁 Weekly', biweekly: '🔁 Every 2 weeks', monthly: '🔁 Monthly' };
+const RECURRENCE_LABELS = { weekly: 'Weekly', biweekly: 'Every 2 weeks', monthly: 'Monthly' };
 const TIME_WINDOW_LABELS = { morning: 'Morning (8am–12pm)', afternoon: 'Afternoon (12pm–4pm)', evening: 'Evening (4pm–8pm)' };
+const STATUS_ICONS = {
+  scheduled: ICONS.clock,
+  overdue: ICONS.clock,
+  collected: ICONS.checkCircle,
+  missed: ICONS.xCircle,
+  cancelled: ICONS.xCircle,
+};
 
 function pickupCardHtml(p) {
   const today = todayStr();
   const overdueScheduled = p.status === 'scheduled' && p.scheduled_date < today;
-  const statusClass = overdueScheduled ? 'status-overdue' : `status-${p.status}`;
+  const statusKey = overdueScheduled ? 'overdue' : p.status;
   const statusLabel = overdueScheduled ? 'Awaiting confirmation' : capitalize(p.status);
 
   let actionsHtml = '';
   if (p.status === 'scheduled') {
     actionsHtml = `
-      <button class="btn btn-sm btn-primary" data-action="collected">Mark collected</button>
-      <button class="btn btn-sm btn-outline" data-action="missed">Report missed</button>
-      <button class="btn btn-sm btn-ghost" data-action="edit">Edit</button>
+      <button class="btn btn-sm btn-primary" data-action="collected">${icon('checkCircle')} Mark collected</button>
+      <button class="btn btn-sm btn-outline" data-action="missed">${icon('alertTriangle')} Report missed</button>
+      <button class="btn btn-sm btn-ghost" data-action="edit">${icon('pencil')} Edit</button>
       <button class="btn btn-sm btn-danger-outline" data-action="cancel">Cancel</button>
     `;
   } else if (p.status === 'cancelled') {
-    actionsHtml = `<button class="btn btn-sm btn-danger-outline" data-action="delete">Delete</button>`;
+    actionsHtml = `<button class="btn btn-sm btn-danger-outline" data-action="delete">${icon('bin')} Delete</button>`;
   } else if (['collected', 'missed'].includes(p.status) && p.feedback_rating === null) {
     actionsHtml = `<button class="btn btn-sm btn-outline" data-action="feedback">Leave feedback</button>
-      <button class="btn btn-sm btn-danger-outline" data-action="delete">Delete</button>`;
+      <button class="btn btn-sm btn-danger-outline" data-action="delete">${icon('bin')} Delete</button>`;
   } else {
-    actionsHtml = `<button class="btn btn-sm btn-danger-outline" data-action="delete">Delete</button>`;
+    actionsHtml = `<button class="btn btn-sm btn-danger-outline" data-action="delete">${icon('bin')} Delete</button>`;
   }
 
   const feedbackHtml =
@@ -263,23 +290,25 @@ function pickupCardHtml(p) {
       : '';
 
   return `
-    <li class="pickup-card waste-${p.waste_type}" data-id="${p.id}">
-      <div class="pickup-top">
-        <div>
-          <div class="pickup-title">${escapeHtml(p.waste_type)} waste pickup</div>
-          <div class="pickup-address">📍 ${escapeHtml(p.address)}</div>
+    <li class="pickup-card" data-id="${p.id}">
+      <div class="waste-icon-chip waste-${p.waste_type}"><span class="icon">${WASTE_ICONS[p.waste_type]}</span></div>
+      <div class="pickup-body">
+        <div class="pickup-top">
+          <div>
+            <div class="pickup-title">${escapeHtml(p.waste_type)} waste pickup</div>
+            <div class="pickup-address">${icon('mapPin')} ${escapeHtml(p.address)}</div>
+          </div>
+          <span class="status-pill status-${statusKey}">${statusLabel}</span>
         </div>
-        <span class="badge ${statusClass}">${statusLabel}</span>
+        ${p.notes ? `<div class="pickup-notes">${escapeHtml(p.notes)}</div>` : ''}
+        <div class="pickup-meta">
+          <span class="badge">${icon('calendar')} ${formatDate(p.scheduled_date)}</span>
+          <span class="badge">${TIME_WINDOW_LABELS[p.time_window]}</span>
+          ${p.recurrence !== 'none' ? `<span class="badge">${icon('repeat')} ${RECURRENCE_LABELS[p.recurrence]}</span>` : ''}
+        </div>
+        <div class="pickup-actions">${actionsHtml}</div>
+        ${feedbackHtml}
       </div>
-      ${p.notes ? `<div class="pickup-notes">${escapeHtml(p.notes)}</div>` : ''}
-      <div class="pickup-meta">
-        <span class="badge waste-${p.waste_type}">${escapeHtml(p.waste_type)}</span>
-        <span class="badge neutral">📅 ${formatDate(p.scheduled_date)}</span>
-        <span class="badge neutral">${TIME_WINDOW_LABELS[p.time_window]}</span>
-        ${p.recurrence !== 'none' ? `<span class="badge recurrence">${RECURRENCE_LABELS[p.recurrence]}</span>` : ''}
-      </div>
-      <div class="pickup-actions">${actionsHtml}</div>
-      ${feedbackHtml}
     </li>
   `;
 }
@@ -513,7 +542,7 @@ function renderReminders(list) {
   }
 
   if (list.length === 0) {
-    $('notif-list').innerHTML = '<li class="hint-text">No pickups due soon 🎉</li>';
+    $('notif-list').innerHTML = '<li class="hint-text">No pickups due soon.</li>';
     return;
   }
   $('notif-list').innerHTML = list
