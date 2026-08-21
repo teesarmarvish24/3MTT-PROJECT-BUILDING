@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 
+const db = require('./db');
 const authRoutes = require('./routes/auth');
 const pickupRoutes = require('./routes/pickups');
 const userRoutes = require('./routes/users');
@@ -33,6 +34,13 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong on the server.' });
 });
 
-app.listen(PORT, () => {
-  console.log(`Waste Pickup Scheduler running at http://localhost:${PORT}`);
-});
+db.ready
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Waste Pickup Scheduler running at http://localhost:${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error('Failed to initialize database:', err);
+    process.exit(1);
+  });

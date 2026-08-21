@@ -28,7 +28,7 @@ A full-stack web app for scheduling waste pickups, built for the **3MTT (3 Milli
 | Layer     | Technology                             |
 |-----------|-----------------------------------------|
 | Backend   | Node.js, Express 5                      |
-| Database  | SQLite (Node's built-in `node:sqlite`)  |
+| Database  | SQLite / libSQL via `@libsql/client` — a local file for development, a hosted [Turso](https://turso.tech) database in production |
 | Auth      | bcryptjs (hashing), jsonwebtoken        |
 | Frontend  | HTML, CSS, vanilla JavaScript (SPA), custom dependency-free SVG charts |
 
@@ -36,7 +36,7 @@ A full-stack web app for scheduling waste pickups, built for the **3MTT (3 Milli
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) v22.5 or newer (uses the built-in `node:sqlite` module — no compiler or build tools needed)
+- [Node.js](https://nodejs.org/) v18 or newer
 
 ### Installation
 
@@ -50,7 +50,20 @@ npm start
 
 Then open **http://localhost:3000** in your browser.
 
-The SQLite database is created automatically at `data/waste-pickup.db` on first run.
+By default (no extra setup needed) the app uses a local SQLite file at
+`data/waste-pickup.db`. This is fine for local development, but on a host
+with an ephemeral filesystem (like Render's free tier) that file gets
+wiped whenever the app restarts. For a deployment where data needs to
+actually persist, set these two environment variables to point at a free
+[Turso](https://turso.tech) database instead:
+
+```bash
+TURSO_DATABASE_URL=libsql://your-db-name.turso.io
+TURSO_AUTH_TOKEN=your-auth-token
+```
+
+When both are set, the app talks to that hosted database instead of the
+local file — same code either way.
 
 For development with auto-reload:
 
